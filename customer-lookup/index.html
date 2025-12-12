@@ -35,7 +35,12 @@ function lookup() {
     resultDiv.innerHTML = "<p>Please enter a phone number.</p>";
     return;
   }
-
+// Query via URL
+    const params = new URLSearchParams(window.location.search);
+if (params.has("phone")) {
+  document.getElementById("phoneInput").value = params.get("phone");
+  lookup();
+}
   // Search in all phone fields
   const record = database.find(r =>
     r.mobile_phone === phone ||
@@ -58,10 +63,6 @@ function lookup() {
 
   resultDiv.innerHTML = html;
 
-  const params = new URLSearchParams(window.location.search);
-if (params.has("phone")) {
-  document.getElementById("phoneInput").value = params.get("phone");
-  lookup();
 }
 </script>
 
