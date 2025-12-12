@@ -22,93 +22,112 @@
 
 <div id="result"></div>
 
+<div style="margin-top:18px;" class="note">
+  If nothing appears, check the console (F12) for errors. If you opened this file directly (file://), fetch may be blocked — see instructions below.
+</div>
+
 <script>
-let database = [];
+  let database = [];
 
-// Normalize phone: remove non-digits, handle +61 → 0
-function normalizePhone(raw) {
-  if (!raw && raw !== 0) return "";
-  const digits = String(raw).replace(/\D+/g, "");
-  if (digits.startsWith("61") && digits.length >= 9) {
-    return "0" + digits.slice(2);
+  // Utility: normalize phone numbers to digits and prefer leading 0 for AU numbers
+  function normalizePhone(raw) {
+    if (!raw && raw !== 0) return "";
+    const digits = String(raw).replace(/\D+/g, "");
+    if (digits.startsWith("61") && digits.length >= 9) {
+      // convert +61... or 61... to leading 0: 61412... -> 0412...
+      return "0" + digits.slice(2);
+    }
+    return digits;
   }
-  return digits;
-}
 
-// Compare phones: exact or last 9 digits
-function phoneMatches(normCandidate, normTarget) {
-  if (!normCandidate || !normTarget) return false;
-  if (normCandidate === normTarget) return true;
-  const minCompare = Math.min(9, normCandidate.length, normTarget.length);
-  return normCandidate.slice(-minCompare) === normTarget.slice(-minCompare);
-}
-
-// Load JSON database
-fetch("data.json")
-  .then(res => res.json())
-  .then(json => {
-    database = json.map(r => {
-      return {
-        __original: r,
-        mobile_phone_norm: normalizePhone(r.mobile_phone),
-        home_phone_norm: normalizePhone(r.home_phone),
-        business_phone_norm: normalizePhone(r.business_phone),
-        other_phone_norm: normalizePhone(r.other_phone)
-      };
+  // Load JSON database with error handling
+  fetch("data.json")
+    .then(res => {
+      if (!res.ok) throw new Error("HTTP error: " + res.status + " " + res.statusText);
+      return res.json();
+    })
+    .then(json => {
+      database = json.map(r => {
+        // create normalized phone fields for faster search and to preserve original
+        return {
+          __original: r,
+          mobile_phone_norm: normalizePhone(r.mobile_phone),
+          home_phone_norm: normalizePhone(r.home_phone),
+          business_phone_norm: normalizePhone(r.business_phone),
+          other_phone_norm: normalizePhone(r.other_phone)
+        };
+      });
+      console.log("Loaded database: records =", database.length);
+      // Auto-run lookup if URL contains ?phone=NUMBER
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("phone")) {
+        const phone = params.get("phone");
+        document.getElementById("phoneInput").value = phone;
+        lookup();
+      }
+    })
+    .catch(err => {
+      console.error("Failed to load data.json:", err);
+      const resultDiv = document.getElementById("result");
+      resultDiv.innerHTML = `<p class="error">Error loading <code>data.json</code>: ${err.message}</p>
+        <p class="note">If you opened the page directly (file://), start a simple local server and open <code>http://localhost:8000/index.html?phone=0412345678</code>.</p>
+        <p class="note">Quick local server commands:</p>
+        <pre>Python 3:  <code>python -m http.server 8000</code>
+Node (http-server): <code>npx http-server -c-1 . 8000</code></pre>`;
     });
 
-    // Auto-run lookup if URL path contains a phone
-    // Example: index.html/61412345678
-    const path = window.location.pathname; // e.g., /index.html/61412345678
-    const parts = path.split("/");
-    const lastPart = parts[parts.length - 1];
-    if (lastPart && lastPart.match(/^\d+$/)) {
-      const phone = lastPart;
-      document.getElementById("phoneInput").value = phone;
-      lookup();
+  // Flexible comparison: exact normalized OR endsWith(lastN)
+  function phoneMatches(normCandidate, normTarget) {
+    if (!normCandidate || !normTarget) return false;
+    if (normCandidate === normTarget) return true;
+    // allow matching by last 8-10 digits (helps +61 vs 0 format)
+    const minCompare = Math.min(9, normCandidate.length, normTarget.length); // default 9 digits
+    const candTail = normCandidate.slice(-minCompare);
+    const targTail = normTarget.slice(-minCompare);
+    return candTail === targTail;
+  }
+
+  function lookup() {
+    const input = document.getElementById("phoneInput").value.trim();
+    const resultDiv = document.getElementById("result");
+    resultDiv.innerHTML = "";
+    if (!input) {
+      resultDiv.innerHTML = "<p>Please enter a phone number.</p>";
+      return;
     }
-  })
-  .catch(err => {
-    console.error("Failed to load data.json:", err);
-    document.getElementById("result").innerHTML = `<p class="error">Error loading data.json: ${err.message}</p>`;
-  });
+    const normInput = normalizePhone(input);
+    console.log("Lookup requested for:", input, "-> normalized:", normInput);
 
-// Lookup function
-function lookup() {
-  const input = document.getElementById("phoneInput").value.trim();
-  const resultDiv = document.getElementById("result");
-  resultDiv.innerHTML = "";
-  if (!input) {
-    resultDiv.innerHTML = "<p>Please enter a phone number.</p>";
-    return;
+    // find first matching record among the normalized fields
+    const found = database.find(item => {
+      const o = item.__original;
+      // also build normalized from original fields already stored
+      const fields = [
+        item.mobile_phone_norm,
+        item.home_phone_norm,
+        item.business_phone_norm,
+        item.other_phone_norm
+      ];
+      return fields.some(f => phoneMatches(f, normInput));
+    });
+
+    if (!found) {
+      resultDiv.innerHTML = `<p>No record found for <strong>${input}</strong>.</p>
+        <p class="note">Try different formats (e.g., +61412345678, 0412345678, 412345678) or check data.json phone formats.</p>`;
+      return;
+    }
+
+    // Display full original record (only non-empty keys)
+    const record = found.__original;
+    let html = `<div class='record'><h3>${record.display_name || "(no display_name)"}</h3>`;
+    for (const key in record) {
+      const val = record[key];
+      if (val === null || val === undefined || String(val).trim() === "") continue;
+      html += `<p><span class='label'>${key}:</span> ${String(val).replace(/\n/g,"<br>")}</p>`;
+    }
+    html += `</div>`;
+    resultDiv.innerHTML = html;
   }
-  const normInput = normalizePhone(input);
-
-  const found = database.find(item => {
-    const fields = [
-      item.mobile_phone_norm,
-      item.home_phone_norm,
-      item.business_phone_norm,
-      item.other_phone_norm
-    ];
-    return fields.some(f => phoneMatches(f, normInput));
-  });
-
-  if (!found) {
-    resultDiv.innerHTML = `<p>No record found for <strong>${input}</strong>.</p>`;
-    return;
-  }
-
-  const record = found.__original;
-  let html = `<div class='record'><h3>${record.display_name || "(no display_name)"}</h3>`;
-  for (const key in record) {
-    const val = record[key];
-    if (val === null || val === undefined || String(val).trim() === "") continue;
-    html += `<p><span class='label'>${key}:</span> ${String(val).replace(/\n/g,"<br>")}</p>`;
-  }
-  html += `</div>`;
-  resultDiv.innerHTML = html;
-}
 </script>
 
 </body>
