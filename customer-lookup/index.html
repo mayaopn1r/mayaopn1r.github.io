@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Customer Lookup</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    .record { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 10px; }
+    .label { font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<h2>Customer Details Lookup</h2>
+<p>Enter phone number:</p>
+
+<input id="phoneInput" placeholder="Enter phone (e.g., 0412345678)" style="width: 300px; padding: 8px;">
+<button onclick="lookup()">Search</button>
+
+<div id="result"></div>
+
+<script>
+let database = [];
+
+// Load JSON
+fetch("data.json")
+  .then(res => res.json())
+  .then(json => database = json);
+
+function lookup() {
+  const phone = document.getElementById("phoneInput").value.trim();
+  const resultDiv = document.getElementById("result");
+  resultDiv.innerHTML = "";
+
+  if (!phone) {
+    resultDiv.innerHTML = "<p>Please enter a phone number.</p>";
+    return;
+  }
+
+  // Search in all phone fields
+  const record = database.find(r =>
+    r.mobile_phone === phone ||
+    r.home_phone === phone ||
+    r.business_phone === phone ||
+    r.other_phone === phone
+  );
+
+  if (!record) {
+    resultDiv.innerHTML = "<p>No record found.</p>";
+    return;
+  }
+
+  // Display full record dynamically
+  let html = `<div class='record'><h3>${record.display_name}</h3>`;
+  for (const key in record) {
+    html += `<p><span class='label'>${key}:</span> ${record[key]}</p>`;
+  }
+  html += "</div>";
+
+  resultDiv.innerHTML = html;
+}
+</script>
+
+</body>
+</html>
