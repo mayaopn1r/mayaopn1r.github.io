@@ -24,14 +24,12 @@
 <script>
 let database = [];
 
-// Normalize phone: 0412345678, +61412345678, 61412345678 all -> 0412345678
+// Normalize phone numbers (AU style)
 function normalizePhone(raw) {
   if (!raw && raw !== 0) return "";
   let digits = String(raw).replace(/\D+/g, "");
   if (digits.startsWith("61") && digits.length >= 9) {
     digits = "0" + digits.slice(2);
-  } else if (digits.startsWith("0") && digits.length >= 9) {
-    digits = digits;
   }
   return digits;
 }
@@ -42,28 +40,6 @@ function phoneMatches(candidate, target) {
   if (candidate === target) return true;
   return candidate.slice(-9) === target.slice(-9);
 }
-
-// Load JSON database
-fetch("data.json")
-  .then(res => res.json())
-  .then(json => {
-    database = json.map(r => ({
-      __original: r,
-      mobile_phone_norm: normalizePhone(r.mobile_phone),
-      home_phone_norm: normalizePhone(r.home_phone),
-      business_phone_norm: normalizePhone(r.business_phone),
-      other_phone_norm: normalizePhone(r.other_phone)
-    }));
-
-    // Check URL query param ?phone=...
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("phone")) {
-      const phone = params.get("phone");
-      document.getElementById("phoneInput").value = phone;
-      document.getElementById("searchContainer").classList.add("hidden"); // hide input
-      lookup();
-    }
-  });
 
 // Lookup function
 function lookup() {
@@ -101,6 +77,34 @@ function lookup() {
   html += `</div>`;
   resultDiv.innerHTML = html;
 }
+
+// Load JSON database
+fetch("data.json")
+  .then(res => res.json())
+  .then(json => {
+    database = json.map(r => ({
+      __original: r,
+      mobile_phone_norm: normalizePhone(r.mobile_phone),
+      home_phone_norm: normalizePhone(r.home_phone),
+      business_phone_norm: normalizePhone(r.business_phone),
+      other_phone_norm: normalizePhone(r.other_phone)
+    }));
+
+    // Detect phone number from path: index.html/0412345678 or index.html/61412345678
+    const path = window.location.pathname;
+    const parts = path.split("/");
+    let lastPart = parts[parts.length - 1] || "";
+
+    // Remove leading + if present
+    if (lastPart.startsWith("+")) lastPart = lastPart.slice(1);
+
+    // Only use if last part is numeric
+    if (lastPart && /^\d+$/.test(lastPart)) {
+      document.getElementById("phoneInput").value = lastPart;
+      document.getElementById("searchContainer").classList.add("hidden"); // hide search bar
+      lookup();
+    }
+  });
 </script>
 
 </body>
